@@ -4,6 +4,6 @@ set -evx
 mkdir ~/.dashcore
 
 # safety check
-if [ ! -f ~/.dashcore/.dash.conf ]; then
-  cp share/dash.conf.example ~/.dashcore/dash.conf
+if [ ! -f ~/.argocore/.argo.conf ]; then
+  cp share/argo.conf.example ~/.argocore/argo.conf
 fi

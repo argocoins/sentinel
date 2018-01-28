@@ -100,3 +100,5 @@ ignore/
 
 # SQLite databases
 database/*.db
+
+*.swp
