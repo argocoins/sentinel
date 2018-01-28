@@ -42,15 +42,18 @@ Test the config by runnings all tests from the sentinel folder you cloned into
 
 With all tests passing and crontab setup, Sentinel will stay in sync with argod and the installation is complete
 Run the sentinel once. It may pause for up to 30 seconds before returning. There should be no output in a normal return
+
     $ ./venv/bin/python bin/sentinel.py
+
 Adjust access rights to the sentinel database
-    $ chmod -R 766 database
+
+    $ chmod -R 755 database
 
 ### 4. Set up Cron
 
 Set up a crontab entry to call Sentinel every minute:
 
-    $ sudo crontab -e
+    $ crontab -e
 
 In the crontab editor, add the lines below, replacing '/home/YOURUSERNAME/sentinel' to the path where you cloned sentinel to:
 
