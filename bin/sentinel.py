@@ -160,68 +160,74 @@ def main():
     argod = ArgoDaemon.from_argo_conf(config.argo_conf)
     options = process_args()
 
-    # check argod connectivity
-    if not is_argod_port_open(argod):
-        print("Cannot connect to argod. Please ensure argod is running and the JSONRPC port is open to Sentinel.")
-        return
+    while True:
+        # check argod connectivity
+        if not is_argod_port_open(argod):
+            print("Cannot connect to argod. Please ensure argod is running and the JSONRPC port is open to Sentinel.")
+            return
 
-    # check argod sync
-    if not argod.is_synced():
-        print("argod not synced with network! Awaiting full sync before running Sentinel.")
-        return
+        # check argod sync
+        if not argod.is_synced():
+            print("argod not synced with network! Awaiting full sync before running Sentinel.")
+            return
 
-    # ensure valid masternode
-    if not argod.is_masternode():
-        print("Invalid Masternode Status, cannot continue.")
-        return
+        # ensure valid masternode
+        if not argod.is_masternode():
+            print("Invalid Masternode Status, cannot continue.")
+            return
 
-    # register a handler if SENTINEL_DEBUG is set
-    if os.environ.get('SENTINEL_DEBUG', None):
-        import logging
-        logger = logging.getLogger('peewee')
-        logger.setLevel(logging.DEBUG)
-        logger.addHandler(logging.StreamHandler())
+        # register a handler if SENTINEL_DEBUG is set
+        if os.environ.get('SENTINEL_DEBUG', None):
+            import logging
+            logger = logging.getLogger('peewee')
+            logger.setLevel(logging.DEBUG)
+            logger.addHandler(logging.StreamHandler())
 
-    if options.bypass:
-        # bypassing scheduler, remove the scheduled event
-        printdbg("--bypass-schedule option used, clearing schedule")
+        if options.bypass:
+            # bypassing scheduler, remove the scheduled event
+            printdbg("--bypass-schedule option used, clearing schedule")
+            Scheduler.clear_schedule()
+
+        if not Scheduler.is_run_time():
+            printdbg("Not yet time for an object sync/vote, moving on.")
+            return
+
+        if not options.bypass:
+            # delay to account for cron minute sync
+            Scheduler.delay()
+
+        # running now, so remove the scheduled event
         Scheduler.clear_schedule()
 
-    if not Scheduler.is_run_time():
-        printdbg("Not yet time for an object sync/vote, moving on.")
-        return
+        # ========================================================================
+        # general flow:
+        # ========================================================================
+        #
+        # load "gobject list" rpc command data, sync objects into internal database
+        perform_argod_object_sync(argod)
 
-    if not options.bypass:
-        # delay to account for cron minute sync
-        Scheduler.delay()
+        if argod.has_sentinel_ping:
+            sentinel_ping(argod)
+        else:
+            # delete old watchdog objects, create a new if necessary
+            watchdog_check(argod)
 
-    # running now, so remove the scheduled event
-    Scheduler.clear_schedule()
+        # auto vote network objects as valid/invalid
+        # check_object_validity(argod)
 
-    # ========================================================================
-    # general flow:
-    # ========================================================================
-    #
-    # load "gobject list" rpc command data, sync objects into internal database
-    perform_argod_object_sync(argod)
+        # vote to delete expired proposals
+        prune_expired_proposals(argod)
 
-    if argod.has_sentinel_ping:
-        sentinel_ping(argod)
-    else:
-        # delete old watchdog objects, create a new if necessary
-        watchdog_check(argod)
+        # create a Superblock if necessary
+        attempt_superblock_creation(argod)
 
-    # auto vote network objects as valid/invalid
-    # check_object_validity(argod)
+        # schedule the next run
+        Scheduler.schedule_next_run()
 
-    # vote to delete expired proposals
-    prune_expired_proposals(argod)
+        if not options.daemon:
+            break
 
-    # create a Superblock if necessary
-    attempt_superblock_creation(argod)
-
-    # schedule the next run
-    Scheduler.schedule_next_run()
+        time.sleep(60)
 
 
 def signal_handler(signum, frame):
@@ -240,6 +246,10 @@ def process_args():
                         action='store_true',
                         help='Bypass scheduler and sync/vote immediately',
                         dest='bypass')
+    parser.add_argument('-d', '--daemon',
+                        action='daemon_true',
+                        help='Daemon mode',
+                        dest='daemon')
     args = parser.parse_args()
 
     return args
