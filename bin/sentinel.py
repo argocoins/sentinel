@@ -247,7 +247,7 @@ def process_args():
                         help='Bypass scheduler and sync/vote immediately',
                         dest='bypass')
     parser.add_argument('-d', '--daemon',
-                        action='daemon_true',
+                        action='store_true',
                         help='Daemon mode',
                         dest='daemon')
     args = parser.parse_args()
