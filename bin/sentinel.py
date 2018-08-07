@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 import sys
 import os
+
 sys.path.append(os.path.normpath(os.path.join(os.path.dirname(__file__), '../lib')))
 import init
 import config
@@ -17,6 +18,8 @@ import atexit
 import random
 from scheduler import Scheduler
 import argparse
+
+INTERVAL_TIMEOUT = 60
 
 
 # sync argod gobject list with our local relational DB backend
@@ -106,7 +109,8 @@ def attempt_superblock_creation(argod):
         printdbg("Not in maturity phase yet -- will not attempt Superblock")
         return
 
-    proposals = Proposal.approved_and_ranked(proposal_quorum=argod.governance_quorum(), next_superblock_max_budget=argod.next_superblock_max_budget())
+    proposals = Proposal.approved_and_ranked(proposal_quorum=argod.governance_quorum(),
+                                             next_superblock_max_budget=argod.next_superblock_max_budget())
     budget_max = argod.get_superblock_budget_allocation(event_block_height)
     sb_epoch_time = argod.block_height_to_epoch(event_block_height)
 
@@ -160,68 +164,95 @@ def main():
     argod = ArgoDaemon.from_argo_conf(config.argo_conf)
     options = process_args()
 
-    # check argod connectivity
-    if not is_argod_port_open(argod):
-        print("Cannot connect to argod. Please ensure argod is running and the JSONRPC port is open to Sentinel.")
-        return
+    while True:
+        # check argod connectivity
+        if not is_argod_port_open(argod):
+            print("Cannot connect to argod. Please ensure argod is running and the JSONRPC port is open to Sentinel.")
 
-    # check argod sync
-    if not argod.is_synced():
-        print("argod not synced with network! Awaiting full sync before running Sentinel.")
-        return
+            if options.daemon:
+                time.sleep(INTERVAL_TIMEOUT)
+                continue
 
-    # ensure valid masternode
-    if not argod.is_masternode():
-        print("Invalid Masternode Status, cannot continue.")
-        return
+            return
 
-    # register a handler if SENTINEL_DEBUG is set
-    if os.environ.get('SENTINEL_DEBUG', None):
-        import logging
-        logger = logging.getLogger('peewee')
-        logger.setLevel(logging.DEBUG)
-        logger.addHandler(logging.StreamHandler())
+        # check argod sync
+        if not argod.is_synced():
+            print("argod not synced with network! Awaiting full sync before running Sentinel.")
 
-    if options.bypass:
-        # bypassing scheduler, remove the scheduled event
-        printdbg("--bypass-schedule option used, clearing schedule")
+            if options.daemon:
+                time.sleep(INTERVAL_TIMEOUT)
+                continue
+
+            return
+
+        # ensure valid masternode
+        if not argod.is_masternode():
+            print("Invalid Masternode Status, cannot continue.")
+
+            if options.daemon:
+                time.sleep(INTERVAL_TIMEOUT)
+                continue
+
+            return
+
+        # register a handler if SENTINEL_DEBUG is set
+        if os.environ.get('SENTINEL_DEBUG', None):
+            import logging
+            logger = logging.getLogger('peewee')
+            logger.setLevel(logging.DEBUG)
+            logger.addHandler(logging.StreamHandler())
+
+        if options.bypass:
+            # bypassing scheduler, remove the scheduled event
+            printdbg("--bypass-schedule option used, clearing schedule")
+            Scheduler.clear_schedule()
+
+        if not Scheduler.is_run_time():
+            printdbg("Not yet time for an object sync/vote, moving on.")
+
+            if options.daemon:
+                time.sleep(INTERVAL_TIMEOUT)
+                continue
+
+            return
+
+        if not options.bypass:
+            # delay to account for cron minute sync
+            Scheduler.delay()
+
+        # running now, so remove the scheduled event
         Scheduler.clear_schedule()
 
-    if not Scheduler.is_run_time():
-        printdbg("Not yet time for an object sync/vote, moving on.")
-        return
+        # ========================================================================
+        # general flow:
+        # ========================================================================
+        #
+        # load "gobject list" rpc command data, sync objects into internal database
+        perform_argod_object_sync(argod)
 
-    if not options.bypass:
-        # delay to account for cron minute sync
-        Scheduler.delay()
+        if argod.has_sentinel_ping:
+            sentinel_ping(argod)
+        else:
+            # delete old watchdog objects, create a new if necessary
+            watchdog_check(argod)
 
-    # running now, so remove the scheduled event
-    Scheduler.clear_schedule()
+        # auto vote network objects as valid/invalid
+        # check_object_validity(argod)
 
-    # ========================================================================
-    # general flow:
-    # ========================================================================
-    #
-    # load "gobject list" rpc command data, sync objects into internal database
-    perform_argod_object_sync(argod)
+        # vote to delete expired proposals
+        prune_expired_proposals(argod)
 
-    if argod.has_sentinel_ping:
-        sentinel_ping(argod)
-    else:
-        # delete old watchdog objects, create a new if necessary
-        watchdog_check(argod)
+        # create a Superblock if necessary
+        attempt_superblock_creation(argod)
 
-    # auto vote network objects as valid/invalid
-    # check_object_validity(argod)
+        # schedule the next run
+        Scheduler.schedule_next_run()
 
-    # vote to delete expired proposals
-    prune_expired_proposals(argod)
+        if not options.daemon:
+            break
 
-    # create a Superblock if necessary
-    attempt_superblock_creation(argod)
-
-    # schedule the next run
-    Scheduler.schedule_next_run()
+        print("Success iteration, sleeping %d" % (INTERVAL_TIMEOUT))
+        time.sleep(INTERVAL_TIMEOUT)
 
 
 def signal_handler(signum, frame):
@@ -240,6 +271,10 @@ def process_args():
                         action='store_true',
                         help='Bypass scheduler and sync/vote immediately',
                         dest='bypass')
+    parser.add_argument('-d', '--daemon',
+                        action='store_true',
+                        help='Daemon mode',
+                        dest='daemon')
     args = parser.parse_args()
 
     return args
