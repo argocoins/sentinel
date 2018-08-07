@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 import sys
 import os
+
 sys.path.append(os.path.normpath(os.path.join(os.path.dirname(__file__), '../lib')))
 import init
 import config
@@ -106,7 +107,8 @@ def attempt_superblock_creation(argod):
         printdbg("Not in maturity phase yet -- will not attempt Superblock")
         return
 
-    proposals = Proposal.approved_and_ranked(proposal_quorum=argod.governance_quorum(), next_superblock_max_budget=argod.next_superblock_max_budget())
+    proposals = Proposal.approved_and_ranked(proposal_quorum=argod.governance_quorum(),
+                                             next_superblock_max_budget=argod.next_superblock_max_budget())
     budget_max = argod.get_superblock_budget_allocation(event_block_height)
     sb_epoch_time = argod.block_height_to_epoch(event_block_height)
 
@@ -164,16 +166,28 @@ def main():
         # check argod connectivity
         if not is_argod_port_open(argod):
             print("Cannot connect to argod. Please ensure argod is running and the JSONRPC port is open to Sentinel.")
+
+            if options.daemon:
+                continue
+
             return
 
         # check argod sync
         if not argod.is_synced():
             print("argod not synced with network! Awaiting full sync before running Sentinel.")
+
+            if options.daemon:
+                continue
+
             return
 
         # ensure valid masternode
         if not argod.is_masternode():
             print("Invalid Masternode Status, cannot continue.")
+
+            if options.daemon:
+                continue
+
             return
 
         # register a handler if SENTINEL_DEBUG is set
@@ -190,6 +204,10 @@ def main():
 
         if not Scheduler.is_run_time():
             printdbg("Not yet time for an object sync/vote, moving on.")
+
+            if options.daemon:
+                continue
+
             return
 
         if not options.bypass:
