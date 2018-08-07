@@ -19,6 +19,8 @@ import random
 from scheduler import Scheduler
 import argparse
 
+INTERVAL_TIMEOUT = 60
+
 
 # sync argod gobject list with our local relational DB backend
 def perform_argod_object_sync(argod):
@@ -245,7 +247,7 @@ def main():
         if not options.daemon:
             break
 
-        time.sleep(60)
+        time.sleep(INTERVAL_TIMEOUT)
 
 
 def signal_handler(signum, frame):
