@@ -170,6 +170,7 @@ def main():
             print("Cannot connect to argod. Please ensure argod is running and the JSONRPC port is open to Sentinel.")
 
             if options.daemon:
+                time.sleep(INTERVAL_TIMEOUT)
                 continue
 
             return
@@ -179,6 +180,7 @@ def main():
             print("argod not synced with network! Awaiting full sync before running Sentinel.")
 
             if options.daemon:
+                time.sleep(INTERVAL_TIMEOUT)
                 continue
 
             return
@@ -188,6 +190,7 @@ def main():
             print("Invalid Masternode Status, cannot continue.")
 
             if options.daemon:
+                time.sleep(INTERVAL_TIMEOUT)
                 continue
 
             return
@@ -208,6 +211,7 @@ def main():
             printdbg("Not yet time for an object sync/vote, moving on.")
 
             if options.daemon:
+                time.sleep(INTERVAL_TIMEOUT)
                 continue
 
             return
