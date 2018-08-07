@@ -251,6 +251,7 @@ def main():
         if not options.daemon:
             break
 
+        print("Success iteration, sleeping %d" % (INTERVAL_TIMEOUT))
         time.sleep(INTERVAL_TIMEOUT)
 
 
