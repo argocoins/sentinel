@@ -7,4 +7,6 @@ COPY ./ /usr/src/app
 
 WORKDIR /usr/src/app
 
+ENV PYTHONUNBUFFERED 0
+
 CMD ["python", "/usr/src/app/bin/sentinel.py", "-d"]
